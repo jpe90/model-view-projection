@@ -38,7 +38,6 @@
 #define MAX_ELEMENT_MEMORY 128 * 1024
 
 #define MOVESPEED 0.1f
-#define PI 3.14159265358979323846
 
 #define UNUSED(a) (void)a
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -857,7 +856,7 @@ calc_grid_mvp(struct cam_orientation *ornt,
     center = glms_vec3_add(ornt->center, ornt->eye);
 
     view = glms_lookat(ornt->eye,center,(vec3s){{0,1,0}});
-    proj = glms_perspective(prsp->fov, prsp->aspect_ratio,prsp->near, prsp->far);
+    proj = perspective(prsp->fov, prsp->aspect_ratio,prsp->near, prsp->far);
     return glms_mat4_mulN((mat4s *[]){&proj, &view}, 2);
 }
 
@@ -1140,10 +1139,9 @@ MainLoop(void *loopArg)
 
             if (nk_tree_push(ctx, NK_TREE_TAB, "Scene Camera", NK_MAXIMIZED))
             {
-                if (nk_button_label(ctx, "Reset Values")) {
-                    fprintf(stdout, "button pressed\n");
+                if (nk_button_label(ctx, "Reset Values"))
                     reset_proj_cam();
-                }
+
                 nk_checkbox_label(ctx, "Fix Eye to Scene Camera", (nk_bool*)&selected_cam);
                 nk_checkbox_label(ctx, "Show Scene Camera", &show_cam);
 
@@ -1278,7 +1276,7 @@ MainLoop(void *loopArg)
         else if (selected_cam == PROJECTION_CAM)
         {
             // TODO: Fix rendering bug with FOV
-            /*  draw_grid(&(objs.grid), &proj_cam_ornt, &proj_cam_prsp); */
+            draw_grid(&(objs.grid), &proj_cam_ornt, &proj_cam_prsp);
             draw_cube(&(objs.cube), &proj_cam_ornt, &proj_cam_prsp);
         }
         /* IMPORTANT: `nk_sdl_render` modifies some global OpenGL state
