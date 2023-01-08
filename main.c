@@ -1,8 +1,7 @@
 /* Adapted from https://github.com/Immediate-Mode-UI/Nuklear/tree/master/demo/sdl_opengles2 */
 
 #define DEBUG 0
-#include <cglm/struct.h>
-#include <cglm/struct/io.h>
+#include "HandmadeMath.h"
 #include <GLES2/gl2.h>
 #include <SDL2/SDL_events.h>
 #include <SDL2/SDL_mouse.h>
@@ -30,6 +29,10 @@
 #define NK_SDL_GLES2_IMPLEMENTATION
 #include "nuklear.h"
 #include "nuklear_sdl_gles2.h"
+
+/* near */
+static hmm_vec4 CSCOORD_LBN, CSCOORD_LTN, CSCOORD_RTN, CSCOORD_RBN,
+	CSCOORD_LBF, CSCOORD_LTF, CSCOORD_RTF, CSCOORD_RBF;
 
 #define WINDOW_WIDTH 1920
 #define WINDOW_HEIGHT 1080
@@ -108,9 +111,9 @@ struct orientation
 
 struct cam_orientation
 {
-    vec3s eye;
-    vec3s center;
-    vec3s up;
+    hmm_vec3 eye;
+    hmm_vec3 center;
+    hmm_vec3 up;
 };
 
 struct cam_perspective
@@ -139,15 +142,15 @@ static bool init_indices(struct ogl *draw_data, struct ogl_init *init_data);
 static bool init_verts(struct ogl *draw_data, struct ogl_init *init_data);
 static bool init_cube(struct ogl *draw_data, struct ogl_init *init_data);
 static void update_frustum_buffer();
-static mat4s perspective(float FOV, float AspectRatio, float Near, float Far);
-static mat4s calc_cube_mvp(struct cam_orientation *ornt, struct cam_perspective *prsp);
-static mat4s calc_grid_mvp(struct cam_orientation *ornt, struct cam_perspective *prsp);
-static mat4s calc_frustum_mvp();
+static hmm_mat4 perspective(float FOV, float AspectRatio, float Near, float Far);
+static hmm_mat4 calc_cube_mvp(struct cam_orientation *ornt, struct cam_perspective *prsp);
+static hmm_mat4 calc_grid_mvp(struct cam_orientation *ornt, struct cam_perspective *prsp);
+static hmm_mat4 calc_frustum_mvp();
 static void set_frustum_verts();
 static void reset_cube_transform();
 static void reset_proj_cam();
-static void draw_vert_lines(struct ogl *obj, mat4s mvp);
-static void draw_triangle_indices(struct ogl *obj, mat4s mvp);
+static void draw_vert_lines(struct ogl *obj, hmm_mat4 mvp);
+static void draw_triangle_indices(struct ogl *obj, hmm_mat4 mvp);
 static void draw_cube(struct ogl *obj, struct cam_orientation *ornt, struct cam_perspective *prsp);
 static void draw_frustum(struct ogl *obj);
 static void draw_grid(struct ogl *obj, struct cam_orientation *ornt, struct cam_perspective *prsp);
@@ -314,6 +317,7 @@ cube_colors[] =
     0.52734375f, 0.76171875f, 0.92578125f, 1.0f,
     0.52734375f, 0.76171875f, 0.92578125f, 1.0f,
     0.52734375f, 0.76171875f, 0.92578125f, 1.0f};
+
 
 enum cam {OBJECTIVE_CAM = nk_false, PROJECTION_CAM = nk_true};
 
@@ -522,12 +526,12 @@ static struct cam_perspective obj_cam_prsp = {
     0.1f,
     100.0f};
 
-static mat4s cube_model, cube_rotate_x, cube_rotate_y, cube_rotate_z,
-             cube_scale, cube_translate, cube_view, cube_projection, cube_mvp;
-static vec3s cube_center;
+static hmm_mat4 cube_model, cube_rotate_x, cube_rotate_y, cube_rotate_z,
+             cube_scale, cube_translate, cube_view, cube_projection;
+static hmm_vec3 cube_center;
 
-static mat4s cam_rotation, cam_scale;
-static vec3s cam_offset;
+static hmm_mat4 cam_rotation, cam_scale;
+static hmm_vec3 cam_offset;
 
 static float yaw = -90.0f;
 static float pitch = 0;
@@ -603,7 +607,118 @@ static struct ogl_init grid_init = {
     0
 };
 
-static vec4s corners[8];
+static hmm_vec4 corners[8];
+
+
+/* ===============================================================
+ *
+ *                          Math Functions
+ *
+ * ===============================================================*/
+
+hmm_mat4
+hmm_mat4_inv(hmm_mat4 mat, hmm_mat4 dest) {
+  float t[6];
+  float det;
+  float a = mat.Elements[0][0], b = mat.Elements[0][1], c = mat.Elements[0][2], d = mat.Elements[0][3],
+        e = mat.Elements[1][0], f = mat.Elements[1][1], g = mat.Elements[1][2], h = mat.Elements[1][3],
+        i = mat.Elements[2][0], j = mat.Elements[2][1], k = mat.Elements[2][2], l = mat.Elements[2][3],
+        m = mat.Elements[3][0], n = mat.Elements[3][1], o = mat.Elements[3][2], p = mat.Elements[3][3];
+
+  t[0] = k * p - o * l; t[1] = j * p - n * l; t[2] = j * o - n * k;
+  t[3] = i * p - m * l; t[4] = i * o - m * k; t[5] = i * n - m * j;
+
+  dest.Elements[0][0] =  f * t[0] - g * t[1] + h * t[2];
+  dest.Elements[1][0] =-(e * t[0] - g * t[3] + h * t[4]);
+  dest.Elements[2][0] =  e * t[1] - f * t[3] + h * t[5];
+  dest.Elements[3][0] =-(e * t[2] - f * t[4] + g * t[5]);
+
+  dest.Elements[0][1] =-(b * t[0] - c * t[1] + d * t[2]);
+  dest.Elements[1][1] =  a * t[0] - c * t[3] + d * t[4];
+  dest.Elements[2][1] =-(a * t[1] - b * t[3] + d * t[5]);
+  dest.Elements[3][1] =  a * t[2] - b * t[4] + c * t[5];
+
+  t[0] = g * p - o * h; t[1] = f * p - n * h; t[2] = f * o - n * g;
+  t[3] = e * p - m * h; t[4] = e * o - m * g; t[5] = e * n - m * f;
+
+  dest.Elements[0][2] =  b * t[0] - c * t[1] + d * t[2];
+  dest.Elements[1][2] =-(a * t[0] - c * t[3] + d * t[4]);
+  dest.Elements[2][2] =  a * t[1] - b * t[3] + d * t[5];
+  dest.Elements[3][2] =-(a * t[2] - b * t[4] + c * t[5]);
+
+  t[0] = g * l - k * h; t[1] = f * l - j * h; t[2] = f * k - j * g;
+  t[3] = e * l - i * h; t[4] = e * k - i * g; t[5] = e * j - i * f;
+
+  dest.Elements[0][3] =-(b * t[0] - c * t[1] + d * t[2]);
+  dest.Elements[1][3] =  a * t[0] - c * t[3] + d * t[4];
+  dest.Elements[2][3] =-(a * t[1] - b * t[3] + d * t[5]);
+  dest.Elements[3][3] =  a * t[2] - b * t[4] + c * t[5];
+
+  det = 1.0f / (a * dest.Elements[0][0] + b * dest.Elements[1][0]
+              + c * dest.Elements[2][0] + d * dest.Elements[3][0]);
+
+  hmm_mat4 result = HMM_MultiplyMat4f(dest, det);
+  return result;
+}
+
+/*!
+ * @brief extracts view frustum corners using clip-space coordinates
+ *
+ * corners' space:
+ *  1- if m = invViewProj: World Space
+ *  2- if m = invMVP:      Object Space
+ *
+ * You probably want to extract corners in world space so use invViewProj
+ * Computing invViewProj:
+ *   glm_mat4_mul(proj, view, viewProj);
+ *   ...
+ *   glm_mat4_inv(viewProj, invViewProj);
+ *
+ * if you have a near coord at i index, you can get it's far coord by i + 4
+ *
+ * Find center coordinates:
+ *   for (j = 0; j < 4; j++) {
+ *     glm_vec3_center(corners[i], corners[i + 4], centerCorners[i]);
+ *   }
+ *
+ * @param[in]  invMat matrix (see brief)
+ * @param[out] dest   exracted view frustum corners (see brief)
+ */
+void
+hmm_frustum_corners(hmm_mat4 invMat, hmm_vec4 dest[8]) {
+  hmm_vec4 c[8];
+
+  /* indexOf(nearCoord) = indexOf(farCoord) + 4 */
+  hmm_vec4 csCoords[8] = {
+    CSCOORD_LBN,
+    CSCOORD_LTN,
+    CSCOORD_RTN,
+    CSCOORD_RBN,
+
+    CSCOORD_LBF,
+    CSCOORD_LTF,
+    CSCOORD_RTF,
+    CSCOORD_RBF
+  };
+
+  c[0] = HMM_MultiplyMat4ByVec4(invMat,csCoords[0]);
+  c[1] = HMM_MultiplyMat4ByVec4(invMat,csCoords[1]);
+  c[2] = HMM_MultiplyMat4ByVec4(invMat,csCoords[2]);
+  c[3] = HMM_MultiplyMat4ByVec4(invMat,csCoords[3]);
+  c[4] = HMM_MultiplyMat4ByVec4(invMat,csCoords[4]);
+  c[5] = HMM_MultiplyMat4ByVec4(invMat,csCoords[5]);
+  c[6] = HMM_MultiplyMat4ByVec4(invMat,csCoords[6]);
+  c[7] = HMM_MultiplyMat4ByVec4(invMat,csCoords[7]);
+
+  dest[0] = HMM_MultiplyVec4f(c[0], 1.0f / c[0].W);
+  dest[1] = HMM_MultiplyVec4f(c[1], 1.0f / c[1].W);
+  dest[2] = HMM_MultiplyVec4f(c[2], 1.0f / c[2].W);
+  dest[3] = HMM_MultiplyVec4f(c[3], 1.0f / c[3].W);
+  dest[4] = HMM_MultiplyVec4f(c[4], 1.0f / c[4].W);
+  dest[5] = HMM_MultiplyVec4f(c[5], 1.0f / c[5].W);
+  dest[6] = HMM_MultiplyVec4f(c[6], 1.0f / c[6].W);
+  dest[7] = HMM_MultiplyVec4f(c[7], 1.0f / c[7].W);
+}
 
 /* ===============================================================
  *
@@ -642,9 +757,22 @@ LoadShader(GLenum type, const char *shaderSrc)
 void
 init_cam()
 {
-    cam_rotation = glms_rotate_make(glm_rad(90), (vec3s){{0.0f, 1.0f, 0.0f}});
-    cam_offset = (vec3s){{0.5f, 0.0f, 0.0f}};
-    cam_scale = glms_scale_make((vec3s){{0.5f, 0.5f, 0.5f}});
+    cam_rotation = HMM_Rotate(90, HMM_Vec3(0, 1, 0));
+    cam_offset = HMM_Vec3(0.5f, 0.0f, 0.0f);
+    cam_scale = HMM_Scale(HMM_Vec3(0.5f, 0.5f, 0.5f));
+}
+
+void
+init_corners()
+{
+   CSCOORD_LBN= HMM_Vec4(-1.0f, -1.0f, -1.0f, 1.0f);
+   CSCOORD_LTN= HMM_Vec4(-1.0f,  1.0f, -1.0f, 1.0f);
+   CSCOORD_RTN= HMM_Vec4(1.0f,  1.0f, -1.0f, 1.0f);
+   CSCOORD_RBN= HMM_Vec4(1.0f, -1.0f, -1.0f, 1.0f);
+   CSCOORD_LBF= HMM_Vec4(-1.0f, -1.0f,  1.0f, 1.0f);
+   CSCOORD_LTF= HMM_Vec4(-1.0f,  1.0f,  1.0f, 1.0f);
+   CSCOORD_RTF= HMM_Vec4(1.0f,  1.0f,  1.0f, 1.0f);
+   CSCOORD_RBF= HMM_Vec4(1.0f, -1.0f,  1.0f, 1.0f);
 }
 
 void
@@ -653,6 +781,7 @@ init_objs()
     reset_proj_cam();
     reset_cube_transform();
     init_cam();
+    init_corners();
 }
 
 void
@@ -796,79 +925,85 @@ update_frustum_buffer()
  * CGLM's perspective function isn't giving me the right numbers
  * TODO: double check why and file a bug if I wasn't doing it wrong
  */
-mat4s
+hmm_mat4
 perspective(float FOV, float AspectRatio, float Near, float Far)
 {
-    mat4s result = GLMS_MAT4_ZERO;
-    float Cotangent = 1.0f / tanf(FOV * (GLM_PI / 360.0f));
+    hmm_mat4 result = HMM_Mat4();
+    float Cotangent = 1.0f / tanf(FOV * (HMM_PI / 360.0f));
 
-    result.raw[0][0] = Cotangent / AspectRatio;
-    result.raw[1][1] = Cotangent;
-    result.raw[2][3] = -1.0f;
-    result.raw[2][2] = (Near + Far) / (Near - Far);
-    result.raw[3][2] = (2.0f * Near * Far) / (Near - Far);
-    result.raw[3][3] = 0.0f;
+    result.Elements[0][0] = Cotangent / AspectRatio;
+    result.Elements[1][1] = Cotangent;
+    result.Elements[2][3] = -1.0f;
+    result.Elements[2][2] = (Near + Far) / (Near - Far);
+    result.Elements[3][2] = (2.0f * Near * Far) / (Near - Far);
+    result.Elements[3][3] = 0.0f;
 
     return result;
 }
 
-mat4s
+hmm_mat4
 calc_cam_mvp()
 {
-    mat4s model = GLMS_MAT4_IDENTITY;
-    mat4s translation = glms_translate_make(glms_vec3_add(proj_cam_ornt.eye, cam_offset));
-    model = glms_mat4_mulN((mat4s *[]){&translation, &cam_rotation, &cam_scale, &model},3);
-    mat4s view = glms_lookat(obj_cam_ornt.eye, glms_vec3_add(obj_cam_ornt.center, obj_cam_ornt.eye), obj_cam_ornt.up);
-    mat4s projection = perspective(obj_cam_prsp.fov, obj_cam_prsp.aspect_ratio,
+    hmm_mat4 translation = HMM_Translate(HMM_AddVec3(proj_cam_ornt.eye, cam_offset));
+    hmm_mat4 rsm = HMM_MultiplyMat4(cam_rotation,cam_scale);
+    hmm_mat4 model = HMM_MultiplyMat4(translation,rsm);
+    hmm_mat4 view = HMM_LookAt(obj_cam_ornt.eye, HMM_AddVec3(obj_cam_ornt.center, obj_cam_ornt.eye), obj_cam_ornt.up);
+    hmm_mat4 projection = perspective(obj_cam_prsp.fov, obj_cam_prsp.aspect_ratio,
                                    obj_cam_prsp.near, obj_cam_prsp.far);
 
-    mat4s mvp = glms_mat4_mulN((mat4s *[]){&projection, &view, &model},3);
+    hmm_mat4 vm = HMM_MultiplyMat4(view,model);
+    hmm_mat4 mvp = HMM_MultiplyMat4(projection,vm);
     return mvp;
 }
 
-mat4s
+hmm_mat4
 calc_cube_mvp(struct cam_orientation *ornt,
               struct cam_perspective *prsp)
 {
-    cube_center = glms_vec3_add(ornt->center, ornt->eye);
-    cube_rotate_x = glms_rotate_make(cube_transform.rx * 30, (vec3s){{1.0f, 0.0f, 0.0f}});
-    cube_rotate_y = glms_rotate_make(cube_transform.ry * 30, (vec3s){{0.0f, 1.0f, 0.0f}});
-    cube_rotate_z = glms_rotate_make(cube_transform.rz * 30, (vec3s){{0.0f, 0.0f, 1.0f}});
+    cube_center = HMM_AddVec3(ornt->center, ornt->eye);
+    cube_rotate_x = HMM_Rotate(cube_transform.rx * 30, HMM_Vec3(1.0f, 0.0f, 0.0f));
+    cube_rotate_y = HMM_Rotate(cube_transform.ry * 30, HMM_Vec3(0.0f, 1.0f, 0.0f));
+    cube_rotate_z = HMM_Rotate(cube_transform.rz * 30, HMM_Vec3(0.0f, 0.0f, 1.0f));
 
-    cube_translate = glms_translate_make((vec3s){{cube_transform.tx,cube_transform.ty,cube_transform.tz}});
+    cube_translate = HMM_Translate(HMM_Vec3(cube_transform.tx,cube_transform.ty,cube_transform.tz));
 
-    cube_model = glms_mat4_mulN((mat4s *[]){&cube_translate, &cube_rotate_z, &cube_rotate_y, &cube_rotate_x, &cube_scale}, 5);
+    hmm_mat4 rsx = HMM_MultiplyMat4(cube_rotate_x,cube_scale);
+    hmm_mat4 rsy = HMM_MultiplyMat4(cube_rotate_y,rsx);
+    hmm_mat4 rsz = HMM_MultiplyMat4(cube_rotate_z,rsy);
+    cube_model = HMM_MultiplyMat4(cube_translate,rsz);
 
-    cube_scale = glms_scale_make((vec3s){{cube_transform.sx,cube_transform.sy,cube_transform.sz}});
+    cube_scale = HMM_Scale(HMM_Vec3(cube_transform.sx,cube_transform.sy,cube_transform.sz));
 
-    cube_view = glms_lookat(ornt->eye,cube_center,(vec3s){{0,1,0}});
+    cube_view = HMM_LookAt(ornt->eye, cube_center, ornt->up);
     cube_projection = perspective(prsp->fov, prsp->aspect_ratio,prsp->near, prsp->far);
-    cube_mvp = glms_mat4_mulN((mat4s *[]){&cube_projection, &cube_view, &cube_model }, 3);
+    hmm_mat4 cube_vp = HMM_MultiplyMat4(cube_projection,cube_view);
+    hmm_mat4 cube_mvp = HMM_MultiplyMat4(cube_vp,cube_model);
     return cube_mvp;
 }
 
-mat4s
+hmm_mat4
 calc_grid_mvp(struct cam_orientation *ornt,
               struct cam_perspective *prsp)
 {
-    mat4s view, proj;
-    vec3s center;
-    center = glms_vec3_add(ornt->center, ornt->eye);
+    hmm_mat4 view, proj;
+    hmm_vec3 center;
+    center = HMM_AddVec3(ornt->center, ornt->eye);
 
-    view = glms_lookat(ornt->eye,center,(vec3s){{0,1,0}});
+    /* view = glms_lookat(ornt->eye,center,(hmm_vec3){{0,1,0}}); */
+    view = HMM_LookAt(ornt->eye, center, ornt->up);
     proj = perspective(prsp->fov, prsp->aspect_ratio,prsp->near, prsp->far);
-    return glms_mat4_mulN((mat4s *[]){&proj, &view}, 2);
+    hmm_mat4 ret = HMM_MultiplyMat4(proj,view);
+    return ret;
 }
 
-mat4s
+hmm_mat4
 calc_frustum_mvp()
 {
-    mat4s model = GLMS_MAT4_IDENTITY;
-    mat4s view = glms_lookat(obj_cam_ornt.eye, glms_vec3_add(obj_cam_ornt.center, obj_cam_ornt.eye), obj_cam_ornt.up);
-    mat4s projection = perspective(obj_cam_prsp.fov, obj_cam_prsp.aspect_ratio,
+    hmm_mat4 view = HMM_LookAt(obj_cam_ornt.eye , HMM_AddVec3(obj_cam_ornt.center, obj_cam_ornt.eye), obj_cam_ornt.up);
+    hmm_mat4 projection = perspective(obj_cam_prsp.fov, obj_cam_prsp.aspect_ratio,
                                    obj_cam_prsp.near, obj_cam_prsp.far);
 
-    mat4s mvp = glms_mat4_mulN((mat4s *[]){&projection, &view, &model},3);
+    hmm_mat4 mvp = HMM_MultiplyMat4(projection,view);
     return mvp;
 }
 
@@ -876,20 +1011,20 @@ calc_frustum_mvp()
 void
 set_frustum_verts()
 {
-    mat4s view = glms_lookat(proj_cam_ornt.eye, glms_vec3_add(proj_cam_ornt.center, proj_cam_ornt.eye), proj_cam_ornt.up);
-    mat4s proj = perspective(proj_cam_prsp.fov, proj_cam_prsp.aspect_ratio,
+    hmm_mat4 view = HMM_LookAt(proj_cam_ornt.eye, HMM_AddVec3(proj_cam_ornt.center, proj_cam_ornt.eye), proj_cam_ornt.up);
+    hmm_mat4 proj = perspective(proj_cam_prsp.fov, proj_cam_prsp.aspect_ratio,
                              proj_cam_prsp.near, proj_cam_prsp.far);
-    mat4s viewproj = glms_mat4_mul(proj, view);
-    mat4s inv = glms_mat4_inv(viewproj);
-    glms_frustum_corners(inv,corners);
-    int i,j,index;
+    hmm_mat4 viewproj = HMM_MultiplyMat4(proj,view);
+    hmm_mat4 inv = hmm_mat4_inv(viewproj, inv);
+
+    hmm_frustum_corners(inv,corners);
+    int i,index;
     index = 0;
 
     for(i = 0; i < 8; i++) {
-        for(j = 0; j < 3; j++) {
-            frustum_verts[index] = corners[i].raw[j];
-            index++;
-        }
+        frustum_verts[index++] = corners[i].X;
+        frustum_verts[index++] = corners[i].Y;
+        frustum_verts[index++] = corners[i].Z;
     }
 }
 
@@ -922,17 +1057,18 @@ reset_proj_cam()
 }
 
 
+
 void
-draw_vert_lines(struct ogl *obj, mat4s mvp)
+draw_vert_lines(struct ogl *obj, hmm_mat4 mvp)
 {
-    glUniformMatrix4fv(obj->matrixID, 1, GL_FALSE, mvp.raw[0]);
+    glUniformMatrix4fv(obj->matrixID, 1, GL_FALSE, mvp.Elements[0]);
     glDrawArrays(GL_LINES, 0, (obj->init_data->vert_len) / 3);
 }
 
 void
-draw_triangle_indices(struct ogl *obj, mat4s mvp)
+draw_triangle_indices(struct ogl *obj, hmm_mat4 mvp)
 {
-    glUniformMatrix4fv(obj->matrixID, 1, GL_FALSE, mvp.raw[0]);
+    glUniformMatrix4fv(obj->matrixID, 1, GL_FALSE, mvp.Elements[0]);
     glDrawElements(GL_TRIANGLES, obj->init_data->index_len, GL_UNSIGNED_SHORT, 0);
 }
 
@@ -942,7 +1078,7 @@ draw_cam(struct ogl *obj)
     use_program(obj);
     bind_vertices(obj);
     init_color(obj);
-    mat4s mvp = calc_cam_mvp();
+    hmm_mat4 mvp = calc_cam_mvp();
     draw_triangle_indices(obj,mvp);
 }
 
@@ -952,7 +1088,7 @@ draw_cube(struct ogl *obj, struct cam_orientation *ornt, struct cam_perspective 
     use_program(obj);
     bind_vertices(obj);
     init_color(obj);
-    mat4s mvp = calc_cube_mvp(ornt, prsp);
+    hmm_mat4 mvp = calc_cube_mvp(ornt, prsp);
     draw_triangle_indices(obj,mvp);
 }
 
@@ -962,7 +1098,7 @@ draw_frustum(struct ogl *obj)
     use_program(obj);
     bind_vertices(obj);
     init_color(obj);
-    mat4s mvp = calc_frustum_mvp();
+    hmm_mat4 mvp = calc_frustum_mvp();
     draw_triangle_indices(obj,mvp);
 }
 
@@ -972,14 +1108,14 @@ draw_grid(struct ogl *obj, struct cam_orientation *ornt, struct cam_perspective 
     glDisable(GL_BLEND);
     use_program(obj);
     bind_vertices(obj);
-    mat4s mvp;
+    hmm_mat4 mvp;
     mvp = calc_grid_mvp( ornt,prsp );
     draw_vert_lines(obj,mvp);
 }
 
 /* ===============================================================
  *
- *                          DEMO
+ *                          Main Program
  *
  * ===============================================================*/
 
@@ -1022,30 +1158,30 @@ MainLoop(void *loopArg)
                 //TODO: make WASD movement additive
             case SDLK_w:
             {
-                vec3s delta, eye;
-                delta = glms_vec3_scale(obj_cam_ornt.center,MOVESPEED);
-                eye = glms_vec3_add(obj_cam_ornt.eye, delta);
+                hmm_vec3 delta, eye;
+                delta = HMM_MultiplyVec3f(obj_cam_ornt.center,MOVESPEED);
+                eye = HMM_AddVec3(obj_cam_ornt.eye, delta);
                 obj_cam_ornt.eye = eye;
                 break;
             }
             case SDLK_a:
             {
-                vec3s left = glms_normalize(glms_cross(obj_cam_ornt.center, obj_cam_ornt.up));
-                vec3s delta = glms_vec3_scale(left,MOVESPEED);
-                obj_cam_ornt.eye = glms_vec3_sub(obj_cam_ornt.eye, delta);
+                hmm_vec3 left = HMM_NormalizeVec3(HMM_Cross(obj_cam_ornt.center, obj_cam_ornt.up));
+                hmm_vec3 delta = HMM_MultiplyVec3f(left,MOVESPEED);
+                obj_cam_ornt.eye = HMM_SubtractVec3(obj_cam_ornt.eye, delta);
                 break;
             }
             case SDLK_s:
             {
-                vec3s delta = glms_vec3_scale(obj_cam_ornt.center,MOVESPEED);
-                obj_cam_ornt.eye = glms_vec3_sub(obj_cam_ornt.eye, delta);
+                hmm_vec3 delta = HMM_MultiplyVec3f(obj_cam_ornt.center,MOVESPEED);
+                obj_cam_ornt.eye = HMM_SubtractVec3(obj_cam_ornt.eye, delta);
                 break;
             }
             case SDLK_d:
             {
-                vec3s left = glms_normalize(glms_cross(obj_cam_ornt.center, obj_cam_ornt.up));
-                vec3s delta = glms_vec3_scale(left,MOVESPEED);
-                obj_cam_ornt.eye = glms_vec3_add(obj_cam_ornt.eye, delta);
+                hmm_vec3 left = HMM_NormalizeVec3(HMM_Cross(obj_cam_ornt.center, obj_cam_ornt.up));
+                hmm_vec3 delta = HMM_MultiplyVec3f(left,MOVESPEED);
+                obj_cam_ornt.eye = HMM_AddVec3(obj_cam_ornt.eye, delta);
                 break;
             }
             }
@@ -1073,10 +1209,10 @@ MainLoop(void *loopArg)
                 int yoffset = lasty - y;
                 yaw += (float)xoffset;
                 pitch += (float)yoffset;
-                obj_cam_ornt.center.x = cosf(glm_rad(yaw)) * cosf(glm_rad(pitch));
-                obj_cam_ornt.center.y = sinf(glm_rad(pitch));
-                obj_cam_ornt.center.z = sinf(glm_rad(yaw)) * cosf(glm_rad(pitch));
-                obj_cam_ornt.center = glms_normalize(obj_cam_ornt.center);
+                obj_cam_ornt.center.X = HMM_COSF(HMM_ToRadians(yaw)) * cosf(HMM_ToRadians(pitch));
+                obj_cam_ornt.center.Y = HMM_SINF(HMM_ToRadians(pitch));
+                obj_cam_ornt.center.Z = HMM_SINF(HMM_ToRadians(yaw)) * HMM_COSF(HMM_ToRadians(pitch));
+                obj_cam_ornt.center = HMM_NormalizeVec3(obj_cam_ornt.center);
             }
             break;
         }
@@ -1149,15 +1285,15 @@ MainLoop(void *loopArg)
 
                 nk_layout_row_dynamic(ctx, 32, 2);
                 nk_label(ctx, "Cam pos x", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_BOTTOM);
-                nk_slider_float(ctx, -10.0f, &(proj_cam_ornt.eye.x), 10.0f, 0.01f);
+                nk_slider_float(ctx, -10.0f, &(proj_cam_ornt.eye.X), 10.0f, 0.01f);
 
                 nk_layout_row_dynamic(ctx, 32, 2);
                 nk_label(ctx, "Cam pos y", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_BOTTOM);
-                nk_slider_float(ctx, -10.0f, &(proj_cam_ornt.eye.y), 10.0f, 0.01f);
+                nk_slider_float(ctx, -10.0f, &(proj_cam_ornt.eye.Y), 10.0f, 0.01f);
 
                 nk_layout_row_dynamic(ctx, 32, 2);
                 nk_label(ctx, "Cam pos z", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_BOTTOM);
-                nk_slider_float(ctx, -10.0f, &(proj_cam_ornt.eye.z), 10.0f, 0.01f);
+                nk_slider_float(ctx, -10.0f, &(proj_cam_ornt.eye.Z), 10.0f, 0.01f);
 
                 nk_layout_row_dynamic(ctx, 32, 2);
                 nk_label(ctx, "fov", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_BOTTOM);
@@ -1188,62 +1324,62 @@ MainLoop(void *loopArg)
 
         nk_group_begin(ctx, "Model", NK_WINDOW_TITLE | NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR);
         nk_layout_row_static(ctx, 30, 50, 4);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m00);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m10);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m20);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m30);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m01);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m11);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m21);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m31);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m02);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m12);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m22);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m32);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m03);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m13);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m23);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.m33);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[0][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[1][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[2][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[3][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[0][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[1][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[2][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[3][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[0][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[1][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[2][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[3][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[0][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[1][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[2][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_model.Elements[3][3]);
         nk_group_end(ctx);
 
         nk_group_begin(ctx, "View", NK_WINDOW_TITLE | NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR);
         nk_layout_row_static(ctx, 30, 50, 4);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m00);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m10);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m20);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m30);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m01);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m11);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m21);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m31);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m02);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m12);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m22);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m32);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m03);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m13);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m23);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.m33);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[0][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[1][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[2][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[3][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[0][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[1][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[2][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[3][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[0][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[1][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[2][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[3][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[0][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[1][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[2][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_view.Elements[3][3]);
         nk_group_end(ctx);
 
         nk_group_begin(ctx, "Projection", NK_WINDOW_TITLE | NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR);
         nk_layout_row_static(ctx, 30, 50, 4);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m00);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m10);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m20);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m30);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m01);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m11);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m21);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m31);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m02);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m12);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m22);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m32);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m03);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m13);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m23);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.m33);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[0][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[1][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[2][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[3][0]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[0][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[1][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[2][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[3][1]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[0][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[1][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[2][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[3][2]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[0][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[1][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[2][3]);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%0.2f", cube_projection.Elements[3][3]);
         nk_group_end(ctx);
     }
     nk_end(ctx);
@@ -1294,14 +1430,14 @@ main(int argc, char *argv[])
 {
     init_objs();
     proj_cam_ornt = proj_cam_ornt_init = (struct cam_orientation){
-        (vec3s){{3.5f, 0.0f, 0.0f}},
-        (vec3s){{-1.0f, 0.0f, 0.0f}},
-        (vec3s){{0.0f, 1.0f, 0.0f}},
+        HMM_Vec3(3.5f, 0.0f, 0.0f),
+        HMM_Vec3(-1.0f, 0.0f, 0.0f),
+        HMM_Vec3(0.0f, 1.0f, 0.0f),
     };
     obj_cam_ornt = obj_cam_ornt_init = (struct cam_orientation){
-        (vec3s){{5.75f, 2.0f, 4.0f}},
-        (vec3s){{-5.0f, -2.0f, -4.0f}},
-        (vec3s){{0.0f, 1.0f, 0.0f}},
+        HMM_Vec3(5.75f, 2.0f, 4.0f),
+        HMM_Vec3(-5.0f, -2.0f, -4.0f),
+        HMM_Vec3(0.0f, 1.0f, 0.0f),
     };
 
     /* GUI */

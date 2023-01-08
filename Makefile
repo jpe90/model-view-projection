@@ -1,38 +1,25 @@
 # Install
-BIN = demo
+BIN = main
 
 # Flags
 CFLAGS += -std=c99 -Wall -Wextra -O2
-SDLFLAGS = $(shell pkg-config --cflags SDL2) $(shell pkg-config --libs SDL2)
-CGLMFLAGS += $(shell pkg-config --cflags cglm) $(shell pkg-config --libs cglm)
+SDLFLAGS = $(shell pkg-config --cflags sdl2) $(shell pkg-config --libs sdl2)
 
 SRC = main.c
 OBJ = $(SRC:.c=.o)
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-	LIBS = -lSDL2 -framework OpenGLES -lm $(SDLFLAGS)
-
+	LIBS = -framework OpenGLES -lm $(SDLFLAGS) $(CGLMFLAGS)
 else
-	LIBS = -lSDL2 -lGLESv2 -lm
+	LIBS = -lGLESv2 -lm $(SDLFLAGS) $(CGLMFLAGS)
 endif
 
-$(BIN): prepare
-	$(CC) $(SRC) $(CFLAGS) -g -o bin/$(BIN) $(LIBS) $(SDL_FLAGS) $(CGLMFLAGS)
-
-web: prepare
-	emcc $(SRC) -Os -s USE_SDL=2 -o bin/index.html
-
-rpi: prepare
-	$(CC) $(SRC) $(CFLAGS) -o bin/$(BIN) `PKG_CONFIG_PATH=/opt/vc/lib/pkgconfig/ shell pkg-config --cflags --libs bcm_host brcmglesv2` `/usr/local/bin/sdl2-config --libs --cflags`
-
-prepare:
-	@mkdir -p bin
-	rm -f bin/$(BIN) $(OBJS)
+$(BIN): $(SRC)
+	$(CC) $(SRC) $(CFLAGS) -g -o $(BIN) $(LIBS)
 
 clean:
-	@mkdir -p bin
-	rm -f bin/$(BIN) $(OBJS)
+	rm $(OBJS)
 
 .PHONY: check-syntax all
 

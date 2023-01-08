@@ -16,7 +16,6 @@ The "Scene camera" section affects the grey camera depicted in the scene. Checki
 
 # Dependencies
 
-- cglm [(AUR)](https://aur.archlinux.org/packages/cglm) [(Ubuntu)](https://launchpad.net/ubuntu/+source/cglm)
 - SDL2
 - OpenGL ES
 
