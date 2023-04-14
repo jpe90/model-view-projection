@@ -2,28 +2,27 @@
 BIN = main
 
 # Flags
-CFLAGS += -std=c99 -Wall -Wextra -O2
-SDLFLAGS = $(shell pkg-config --cflags sdl2) $(shell pkg-config --libs sdl2)
+CFLAGS += -std=c99 -Wall -Wextra  -Wno-unused-variable -Wno-unused-function -g
+SDL2FLAGS = $(shell pkg-config --libs SDL2) $(shell pkg-config --cflags SDL2)
 
 SRC = main.c
 OBJ = $(SRC:.c=.o)
 
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-	LIBS = -framework OpenGLES -lm $(SDLFLAGS) $(CGLMFLAGS)
+ifeq ($(OS),Windows_NT)
+BIN := $(BIN).exe
+LIBS = -lmingw32 -lSDL2main -lSDL2 -lopengl32 -lm -lGLU32 -lGLEW32
 else
-	LIBS = -lGLESv2 -lm $(SDLFLAGS) $(CGLMFLAGS)
+	UNAME_S := $(shell uname -s)
+	ifeq ($(UNAME_S),Darwin)
+		LIBS = -lSDL2 -framework OpenGL -lm -lGLEW $(SDL2FLAGS)
+	else
+		LIBS = -lSDL2 -lGL -lm -lGLU -lGLEW
+	endif
 endif
 
-$(BIN): $(SRC)
-	$(CC) $(SRC) $(CFLAGS) -g -o $(BIN) $(LIBS)
-
-clean:
-	rm $(OBJS)
-
-.PHONY: check-syntax all
-
-check-syntax:
-	$(CC) $(CFLAGS) -Wall -Wextra -fsyntax-only $(SRC) $(LIBS) $(SDL_FLAGS)
+$(BIN):
+	@mkdir -p bin
+	rm -f bin/$(BIN) $(OBJS)
+	$(CC) $(SRC) $(CFLAGS) -o bin/$(BIN) $(LIBS)
 
 all: $(BIN)
